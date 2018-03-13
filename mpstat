@@ -1,0 +1,37 @@
+#!/usr/local/bin/bash
+function usage {
+	cat <<-END >&2
+	USAGE: mpstat {-C CPU } [interval [duration]]
+	                 -C CPU         # measure this CPU only
+	                 interval       # output interval in secs (default 1)
+	                 duration       # total seconds (default infinityish)
+	  eg,
+	       mpstat                  # show stats across all CPUs
+	       mpstat 5                # show stats every 5 seconds
+	       mpstat -C 0             # measure CPU 0 only
+END
+	exit
+}
+
+opt_cpu=0; cpu="";
+
+while getopts C:h opt
+do
+	case $opt in
+	C)	opt_cpu=1; cpu=$OPTARG ;;
+	h|?)	usage ;;
+	esac
+done
+
+shift $(( $OPTIND - 1 ))
+
+secs=${1-1}			# default 1 second
+duration=${2-999999999}		# default semi-infinite seconds
+
+vmstat -P -w $secs -c $(( $duration/$secs )) | awk -v cpu=$cpu '
+	{
+		for (i=17+3*cpu; i<20+3*cpu; ++i) 
+			printf"%s\t", $i;
+		   	print ""
+	}
+'

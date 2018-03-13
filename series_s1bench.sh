@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/local/bin/bash
 #
 # series_s1bench.sh	Harness for running s1bench microbenchmark.
 #
@@ -26,6 +26,7 @@ rawfile=/tmp/out.benchtmp.$$
 
 ### benchmark config
 wssize=$(( 100 * 1024 * 1024 ))
+#wssize=0
 spintime_ms=300
 runtime_ms=3000
 stride=64
@@ -57,7 +58,7 @@ done
 
 ### choose a CPU and memory node to benchmark on: the last one
 #cpu=$(awk '$1 == "processor" { cpu = $3 } END { print cpu }' /proc/cpuinfo)
-cpu=$(($(sysctl hw.ncpu) - 1))
+cpu=$(( $(sysctl -n hw.ncpu) - 1 ))
 if [[ "$cpu" != [0-9]*  ]]; then
 	echo >&2 "ERROR: choosing a CPU (got $cpu). Exiting."
 	exit
@@ -65,20 +66,10 @@ fi
 
 ### debug tools
 debugsecs=5
-#debug[0]="mpstat -P $cpu 1 $debugsecs"
-debug[0]="vmstat -P -w 1 -c $debugsecs | awk '{for(i=17+3*$cpu;i<20+3*$cpu;++i) printf\"%s\t\", $i; print\"\""
+debug[0]="./mpstat -C$cpu 1 $debugsecs"
 debug[1]="./showboost -C$cpu 1 $debugsecs"
 #debug[2]="./pmcarch -C$cpu 1 $debugsecs"
-#debug[3]="./tlbstat -C$cpu 1 $debugsecs"
-debug[2]= cat << EOM 
-timeout 5.1s pmcstat -c $cpu -w 1 -s dtlb_load_misses.miss_causes_a_walk
-								  -s dtlb_store_misses.miss_causes_a_walk
-								  -s itlb_misses.miss_causes_a_walk
-								  -s dtlb_load_misses.walk_active
-								  -s dtlb_store_misses.walk_active
-								  -s itlb_misses.walk_active
-								  -s instructions
-EOM
+debug[2]="./tlbstat -C$cpu 1 $debugsecs"
 											  
 # these will get early SIGINTs
 
@@ -109,7 +100,7 @@ for wsreads in $sizes; do
 		# benchmark
 		cmd="./s1bench $spintime_ms $wssize $wsreads $stride $runtime_ms"
 		# let STDERR run free
-		numactl --membind=$node --physcpubind=$cpu $cmd > $rawfile
+		cpuset -l $cpu $cmd > $rawfile
 		while read category num1 num2 num3; do
 			[[ "$category" != "RATES:" ]] && continue
 			spinrates="$spinrates $num1"
@@ -118,7 +109,7 @@ for wsreads in $sizes; do
 		done < $rawfile
 		(( dpid )) && [ -d /proc/$dpid ] && kill -INT $dpid
 		wait	# for debug tool if necessary
-
+	
 		# print raw output
 		[ -e $rawfile ] && awk -v w=$wsreads -v i=$i '$1 !~ /INPUT/ { print "RAW:", w, i, $0 }' $rawfile
 
